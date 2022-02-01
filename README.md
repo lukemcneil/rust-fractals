@@ -7,7 +7,7 @@ Controls
 * `d` - move right
 * `i` - zoom in
 * `o` - zoom out
-* `.` - make the fractal bigger
-* `,` - make the fractal smaller
+* `.` - make the window bigger
+* `,` - make the window smaller
 * `=` - run with more iterations, draw with more precision
 * `-` - run with less iterations, draw with less precision
