@@ -20,22 +20,22 @@ fn main() {
                     let change = (x_end - x_start) / 10.0;
                     y_start -= change;
                     y_end -= change;
-                },
+                }
                 'a' => {
                     let change = (y_end - y_start) / 10.0;
                     x_start -= change;
                     x_end -= change;
-                },
+                }
                 's' => {
                     let change = (x_end - x_start) / 10.0;
                     y_start += change;
                     y_end += change;
-                },
+                }
                 'd' => {
                     let change = (y_end - y_start) / 10.0;
                     x_start += change;
                     x_end += change;
-                },
+                }
                 'i' => {
                     let width = x_end - x_start;
                     let height = y_end - y_start;
@@ -43,7 +43,7 @@ fn main() {
                     x_end -= width / 4.0;
                     y_start += height / 4.0;
                     y_end -= height / 4.0;
-                },
+                }
                 'o' => {
                     let width = x_end - x_start;
                     let height = y_end - y_start;
@@ -51,33 +51,43 @@ fn main() {
                     x_end += width / 2.0;
                     y_start -= height / 2.0;
                     y_end += height / 2.0;
-                },
+                }
                 '=' => {
                     iterations += 10;
                     println!("new iterations: {}", iterations);
-                },
+                }
                 '-' => {
                     if iterations > 10 {
                         iterations -= 10;
                     }
                     println!("new iterations: {}", iterations);
-                },
+                }
                 '.' => {
                     width_pixels += 5;
-                },
+                }
                 ',' => {
                     if width_pixels > 5 {
                         width_pixels -= 5;
                     }
-                },
-                x => {println!("unrecognized key: {}", x); continue}
+                }
+                x => {
+                    println!("unrecognized key: {}", x);
+                    continue;
+                }
             }
             print_mandlebrot(x_start, x_end, y_start, y_end, iterations, width_pixels);
         }
     }
 }
 
-fn print_mandlebrot(x_start: f64, x_end: f64, y_start: f64, y_end: f64, iterations: u32, width_pixels: u32) {
+fn print_mandlebrot(
+    x_start: f64,
+    x_end: f64,
+    y_start: f64,
+    y_end: f64,
+    iterations: u32,
+    width_pixels: u32,
+) {
     let width = x_end - x_start;
     let height = y_end - y_start;
     let height_pixels = ((width_pixels as f64) * (height / width) / 2.0) as u32;
@@ -93,7 +103,11 @@ fn print_mandlebrot(x_start: f64, x_end: f64, y_start: f64, y_end: f64, iteratio
             let y = (y as f64) * height_pixel_distance + y_start;
             let i = in_mandlebrot(x, y, iterations);
             let (r, g, b) = if i != iterations {
-                (((i as f32) * (255 as f32 / iterations as f32)) as u32, ((i as f32) * (255 as f32 / iterations as f32)) as u32, 140)
+                (
+                    ((i as f32) * (255 as f32 / iterations as f32)) as u32,
+                    ((i as f32) * (255 as f32 / iterations as f32)) as u32,
+                    140,
+                )
             } else {
                 (0, 0, 0)
             };
