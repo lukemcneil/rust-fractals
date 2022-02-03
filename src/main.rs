@@ -1,124 +1,141 @@
-use console::Term;
+extern crate nannou;
+use nannou::prelude::*;
+
+const WINDOW_WIDTH: i32 = 600;
+const WINDOW_HEIGHT: i32 = 400;
 
 fn main() {
-    let stdout = Term::buffered_stdout();
-
-    let mut x_start = -2f64;
-    let mut x_end = 1f64;
-    let mut y_start = -1f64;
-    let mut y_end = 1f64;
-    let mut iterations = 101;
-    let mut width_pixels = 100;
-
-    print_mandlebrot(x_start, x_end, y_start, y_end, iterations, width_pixels);
-
-    loop {
-        if let Ok(character) = stdout.read_char() {
-            print!("{}[2J", 27 as char);
-            match character {
-                'w' => {
-                    let change = (x_end - x_start) / 10.0;
-                    y_start -= change;
-                    y_end -= change;
-                }
-                'a' => {
-                    let change = (y_end - y_start) / 10.0;
-                    x_start -= change;
-                    x_end -= change;
-                }
-                's' => {
-                    let change = (x_end - x_start) / 10.0;
-                    y_start += change;
-                    y_end += change;
-                }
-                'd' => {
-                    let change = (y_end - y_start) / 10.0;
-                    x_start += change;
-                    x_end += change;
-                }
-                'i' => {
-                    let width = x_end - x_start;
-                    let height = y_end - y_start;
-                    x_start += width / 4.0;
-                    x_end -= width / 4.0;
-                    y_start += height / 4.0;
-                    y_end -= height / 4.0;
-                }
-                'o' => {
-                    let width = x_end - x_start;
-                    let height = y_end - y_start;
-                    x_start -= width / 2.0;
-                    x_end += width / 2.0;
-                    y_start -= height / 2.0;
-                    y_end += height / 2.0;
-                }
-                '=' => {
-                    iterations += 10;
-                    println!("new iterations: {}", iterations);
-                }
-                '-' => {
-                    if iterations > 10 {
-                        iterations -= 10;
-                    }
-                    println!("new iterations: {}", iterations);
-                }
-                '.' => {
-                    width_pixels += 5;
-                }
-                ',' => {
-                    if width_pixels > 5 {
-                        width_pixels -= 5;
-                    }
-                }
-                x => {
-                    println!("unrecognized key: {}", x);
-                    continue;
-                }
-            }
-            print_mandlebrot(x_start, x_end, y_start, y_end, iterations, width_pixels);
-        }
-    }
+    nannou::app(model)
+        .event(event)
+        .simple_window(view)
+        .size(WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32)
+        .run();
 }
 
-fn print_mandlebrot(
+struct Model {
+    pixel_size: i32,
     x_start: f64,
     x_end: f64,
     y_start: f64,
     y_end: f64,
-    iterations: u32,
-    width_pixels: u32,
-) {
-    let width = x_end - x_start;
-    let height = y_end - y_start;
-    let height_pixels = ((width_pixels as f64) * (height / width) / 2.0) as u32;
-    let width_pixel_distance = width / (width_pixels as f64);
-    let height_pixel_distance = height / (height_pixels as f64);
-
-    println!("{}", "_".repeat(width_pixels as usize));
-
-    for y in 0..height_pixels {
-        print!("|");
-        for x in 0..width_pixels {
-            let x = (x as f64) * width_pixel_distance + x_start;
-            let y = (y as f64) * height_pixel_distance + y_start;
-            let i = in_mandlebrot(x, y, iterations);
-            let (r, g, b) = if i != iterations {
-                (
-                    ((i as f32) * (255 as f32 / iterations as f32)) as u32,
-                    ((i as f32) * (255 as f32 / iterations as f32)) as u32,
-                    140,
-                )
-            } else {
-                (0, 0, 0)
-            };
-            print!("\x1b[48;2;{};{};{}m \x1b[0m", r, g, b);
-        }
-        println!("|");
-    }
-    println!("{}", "_".repeat(width_pixels as usize));
+    iterations: i32,
 }
 
-fn in_mandlebrot(r0: f64, c0: f64, iterations: u32) -> u32 {
+fn model(_app: &App) -> Model {
+    Model {
+        pixel_size: 4,
+        x_start: -2.0,
+        x_end: 1.0,
+        y_start: -1.0,
+        y_end: 1.0,
+        iterations: 101,
+    }
+}
+
+fn event(_app: &App, model: &mut Model, event: Event) {
+    if let Event::WindowEvent { id: _, simple } = event {
+        if let Some(window_event) = simple {
+            match window_event {
+                WindowEvent::MouseMoved(_point) => {
+                    // model.x = point[0];
+                    // model.y = point[1];
+                    println!("{:?}", window_event)
+                }
+                // WindowEvent::MouseWheel(mouse_scroll_delta, touch_phase) => {
+                //     if let MouseScrollDelta::LineDelta(hor, ver) = mouse_scroll_delta {}
+                // }
+                WindowEvent::KeyPressed(key) => match key {
+                    Key::Up | Key::W => {
+                        let change = (model.y_end - model.y_start) * 0.1;
+                        model.y_start += change;
+                        model.y_end += change;
+                    }
+                    Key::Down | Key::S => {
+                        let change = (model.y_end - model.y_start) * 0.1;
+                        model.y_start -= change;
+                        model.y_end -= change;
+                    }
+                    Key::Right | Key::D => {
+                        let change = (model.x_end - model.x_start) * 0.1;
+                        model.x_start += change;
+                        model.x_end += change;
+                    }
+                    Key::Left | Key::A => {
+                        let change = (model.x_end - model.x_start) * 0.1;
+                        model.x_start -= change;
+                        model.x_end -= change;
+                    }
+                    Key::I => {
+                        let width = model.x_end - model.x_start;
+                        let height = model.y_end - model.y_start;
+                        model.x_start += width / 4.0;
+                        model.x_end -= width / 4.0;
+                        model.y_start += height / 4.0;
+                        model.y_end -= height / 4.0;
+                    }
+                    Key::O => {
+                        let width = model.x_end - model.x_start;
+                        let height = model.y_end - model.y_start;
+                        model.x_start -= width / 2.0;
+                        model.x_end += width / 2.0;
+                        model.y_start -= height / 2.0;
+                        model.y_end += height / 2.0;
+                    }
+                    Key::K => {
+                        model.pixel_size = std::cmp::max(1, model.pixel_size - 1);
+                    }
+                    Key::L => {
+                        model.pixel_size = std::cmp::min(WINDOW_HEIGHT / 2, model.pixel_size + 1);
+                    }
+                    Key::Comma => {
+                        model.iterations += 50;
+                    }
+                    Key::Period => {
+                        model.iterations = std::cmp::max(10, model.iterations - 50);
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
+        }
+    }
+}
+
+fn view(app: &App, model: &Model, frame: Frame) {
+    println!("{}", app.fps());
+    let draw = app.draw();
+    draw.background().color(PLUM);
+    draw_mandlebrot(&model, &draw, &frame);
+    draw.to_frame(app, &frame).unwrap();
+}
+
+fn draw_mandlebrot(model: &Model, draw: &Draw, frame: &Frame) {
+    let width_pixels = frame.texture_size()[0] as i32 / model.pixel_size;
+    let height_pixels = frame.texture_size()[1] as i32 / model.pixel_size;
+    let width_pixel_distance = (model.x_end - model.x_start) / (width_pixels as f64);
+    let height_pixel_distance = (model.y_end - model.y_start) / (height_pixels as f64);
+    for y in 0..height_pixels {
+        for x in 0..width_pixels {
+            let x_mandlebrot_space = (x as f64) * width_pixel_distance + model.x_start;
+            let y_mandlebrot_space = (y as f64) * height_pixel_distance + model.y_start;
+            let i = iterations_from_mandlebrot(
+                x_mandlebrot_space,
+                y_mandlebrot_space,
+                model.iterations,
+            );
+            if i == model.iterations {
+                draw.rect()
+                    .color(BLACK)
+                    .x((x * model.pixel_size) as f32 - (frame.texture_size()[0] / 2) as f32)
+                    .y((y * model.pixel_size) as f32 - (frame.texture_size()[1] / 2) as f32)
+                    .w(model.pixel_size as f32)
+                    .h(model.pixel_size as f32);
+            }
+        }
+    }
+}
+
+fn iterations_from_mandlebrot(r0: f64, c0: f64, iterations: i32) -> i32 {
     let mut r = 0.0;
     let mut c = 0.0;
     let mut r2 = 0.0;
