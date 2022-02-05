@@ -19,7 +19,7 @@ pub struct App {
     y_start: f64,
     y_end: f64,
     iterations: i32,
-    pixel_data: Vec<Vec<bool>>,
+    pixel_data: Vec<Vec<Option<[f32; 4]>>>,
     window_width: i32,
     window_height: i32,
 }
@@ -28,22 +28,21 @@ impl App {
     fn render(&mut self, args: &RenderArgs) {
         use graphics::*;
 
-        const GREEN: [f32; 4] = [0.0, 1.0, 0.0, 1.0];
         const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
         let square = rectangle::square(0.0, 0.0, self.pixel_size);
         // let (x, y) = (args.window_size[0] / 2.0, args.window_size[1] / 2.0);
 
         self.gl.draw(args.viewport(), |c, gl| {
-            clear(GREEN, gl);
+            clear(BLACK, gl);
 
             for (x, col) in self.pixel_data.iter().enumerate() {
                 for (y, &e) in col.iter().enumerate() {
-                    if e {
+                    if let Some(color) = e {
                         let transform = c
                             .transform
                             .trans(x as f64 * self.pixel_size, y as f64 * self.pixel_size);
-                        rectangle(BLACK, square, transform, gl);
+                        rectangle(color, square, transform, gl);
                     }
                 }
             }
@@ -88,7 +87,7 @@ impl App {
         let new_height = self.window_height / self.pixel_size as i32;
         self.pixel_data.resize(new_width as usize, vec![]);
         for col in &mut self.pixel_data {
-            col.resize(new_height as usize, true);
+            col.resize(new_height as usize, None);
         }
     }
 
@@ -131,7 +130,12 @@ impl App {
                     width_pixels,
                     height_pixels,
                 );
-                self.pixel_data[x as usize][y as usize] = in_mandlebrot(x_f, y_f, self.iterations);
+                let i = iterations_from_mandlebrot(x_f, y_f, self.iterations);
+                self.pixel_data[x as usize][y as usize] = if i == self.iterations {
+                    None
+                } else {
+                    Some(iterations_to_color(i))
+                };
             }
         }
         self.print_current_settings(now.elapsed().as_millis() as f64 / 1000.0);
@@ -186,7 +190,7 @@ fn main() {
         y_end: 1.0,
         iterations: 104,
         pixel_data: vec![
-            vec![true; starting_window_height / starting_pixel_size as usize];
+            vec![None; starting_window_height / starting_pixel_size as usize];
             starting_window_width / starting_pixel_size as usize
         ],
         window_width: starting_window_width as i32,
@@ -207,19 +211,30 @@ fn main() {
     }
 }
 
-fn in_mandlebrot(r0: f64, c0: f64, iterations: i32) -> bool {
+fn iterations_to_color(iterations: i32) -> [f32; 4] {
+    const A: f32 = 0.1;
+    let n = iterations as f32;
+    [
+        (0.5 * (A * n).sin() + 0.5),
+        (0.5 * (A * n + 2.094).sin() + 0.5),
+        (0.5 * (A * n + 4.188).sin() + 0.5),
+        1.0,
+    ]
+}
+
+fn iterations_from_mandlebrot(r0: f64, c0: f64, iterations: i32) -> i32 {
     let mut r = 0.0;
     let mut c = 0.0;
     let mut r2 = 0.0;
     let mut c2 = 0.0;
-    for _i in 0..iterations {
+    for i in 0..iterations {
         if r2 + c2 > 4.0 {
-            return false;
+            return i;
         }
         c = 2.0 * r * c + c0;
         r = r2 - c2 + r0;
         r2 = r * r;
         c2 = c * c;
     }
-    true
+    iterations
 }
