@@ -148,7 +148,7 @@ impl App {
             .par_iter_mut()
             .enumerate()
             .for_each(|(x, col)| {
-                col.par_iter_mut().enumerate().for_each(|(y, color)| {
+                col.iter_mut().enumerate().for_each(|(y, color)| {
                     let x_f =
                         (x as f64) / (width_pixels as f64) * fractal_space_width + self.x_start;
                     let y_f = ((height_pixels as usize - y) as f64) / (height_pixels as f64)
