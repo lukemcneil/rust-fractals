@@ -1,153 +1,225 @@
-extern crate nannou;
-use nannou::prelude::*;
+extern crate glutin_window;
+extern crate graphics;
+extern crate opengl_graphics;
+extern crate piston;
 
-const WINDOW_WIDTH: i32 = 600;
-const WINDOW_HEIGHT: i32 = 400;
+use std::time::Instant;
 
-fn main() {
-    nannou::app(model)
-        .event(event)
-        .simple_window(view)
-        .size(WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32)
-        .run();
-}
+use glutin_window::GlutinWindow as Window;
+use opengl_graphics::{GlGraphics, OpenGL};
+use piston::event_loop::{EventSettings, Events};
+use piston::input::{Button, ButtonArgs, ButtonEvent, ButtonState, Key, RenderArgs, RenderEvent};
+use piston::window::WindowSettings;
 
-struct Model {
-    pixel_size: i32,
+pub struct App {
+    gl: GlGraphics,
+    pixel_size: f64,
     x_start: f64,
     x_end: f64,
     y_start: f64,
     y_end: f64,
     iterations: i32,
+    pixel_data: Vec<Vec<bool>>,
+    window_width: i32,
+    window_height: i32,
 }
 
-fn model(_app: &App) -> Model {
-    Model {
-        pixel_size: 4,
+impl App {
+    fn render(&mut self, args: &RenderArgs) {
+        use graphics::*;
+
+        const GREEN: [f32; 4] = [0.0, 1.0, 0.0, 1.0];
+        const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+
+        let square = rectangle::square(0.0, 0.0, self.pixel_size);
+        // let (x, y) = (args.window_size[0] / 2.0, args.window_size[1] / 2.0);
+
+        self.gl.draw(args.viewport(), |c, gl| {
+            clear(GREEN, gl);
+
+            for (x, col) in self.pixel_data.iter().enumerate() {
+                for (y, &e) in col.iter().enumerate() {
+                    if e {
+                        let transform = c
+                            .transform
+                            .trans(x as f64 * self.pixel_size, y as f64 * self.pixel_size);
+                        rectangle(BLACK, square, transform, gl);
+                    }
+                }
+            }
+        });
+    }
+
+    fn handle_button(&mut self, args: &ButtonArgs) {
+        if let ButtonState::Press = args.state {
+            if let Button::Keyboard(key) = args.button {
+                match key {
+                    Key::W | Key::Up => self.pan(0.0, 1.0),
+                    Key::A | Key::Left => self.pan(-1.0, 0.0),
+                    Key::S | Key::Down => self.pan(0.0, -1.0),
+                    Key::D | Key::Right => self.pan(1.0, 0.0),
+                    Key::I => self.zoom(true),
+                    Key::O => self.zoom(false),
+                    Key::Equals => self.iterations += 10,
+                    Key::Minus => {
+                        if self.iterations > 10 {
+                            self.iterations -= 10
+                        }
+                    }
+                    Key::RightBracket => {
+                        if self.pixel_size >= 2.0 {
+                            self.pixel_size -= 1.0;
+                            self.reset_pixel_data_vecs();
+                        }
+                    }
+                    Key::LeftBracket => {
+                        self.pixel_size += 1.0;
+                        self.reset_pixel_data_vecs();
+                    }
+                    _ => (),
+                }
+                self.update_pixel_data();
+            }
+        }
+    }
+
+    fn reset_pixel_data_vecs(&mut self) {
+        let new_width = self.window_width / self.pixel_size as i32;
+        let new_height = self.window_height / self.pixel_size as i32;
+        self.pixel_data.resize(new_width as usize, vec![]);
+        for col in &mut self.pixel_data {
+            col.resize(new_height as usize, true);
+        }
+    }
+
+    fn pan(&mut self, x_dir: f64, y_dir: f64) {
+        let x_change = (self.x_end - self.x_start) * 0.1 * (x_dir as f64);
+        let y_change = (self.y_end - self.y_start) * 0.1 * (y_dir as f64);
+
+        self.x_start += x_change;
+        self.x_end += x_change;
+        self.y_start += y_change;
+        self.y_end += y_change;
+    }
+
+    fn zoom(&mut self, zoom_in: bool) {
+        let scroll_speed = 10.0;
+        let width = self.x_end - self.x_start;
+        let height = self.y_end - self.y_start;
+        if zoom_in {
+            self.x_start += width / scroll_speed;
+            self.x_end -= width / scroll_speed;
+            self.y_start += height / scroll_speed;
+            self.y_end -= height / scroll_speed;
+        } else {
+            self.x_start -= width / (scroll_speed / 2.0);
+            self.x_end += width / (scroll_speed / 2.0);
+            self.y_start -= height / (scroll_speed / 2.0);
+            self.y_end += height / (scroll_speed / 2.0);
+        }
+    }
+
+    fn update_pixel_data(&mut self) {
+        let now = Instant::now();
+        let width_pixels = self.window_width / self.pixel_size as i32;
+        let height_pixels = self.window_height / self.pixel_size as i32;
+        for x in 0..width_pixels {
+            for y in 0..height_pixels {
+                let (x_f, y_f) = self.grid_indices_to_fractal_space(
+                    x,
+                    height_pixels - y,
+                    width_pixels,
+                    height_pixels,
+                );
+                self.pixel_data[x as usize][y as usize] = in_mandlebrot(x_f, y_f, self.iterations);
+            }
+        }
+        self.print_current_settings(now.elapsed().as_millis() as f64 / 1000.0);
+    }
+
+    fn print_current_settings(&mut self, elapsed: f64) {
+        println!("------------------------------------------------------------");
+        println!("x = {}", self.x_start);
+        println!("y = {}", self.y_start);
+        println!("width = {}", self.x_end - self.x_start);
+        println!("height = {}", self.y_end - self.y_start);
+        println!("pixel size = {}", self.pixel_size);
+        println!("iterations = {}", self.iterations);
+        println!("time to update = {}", elapsed);
+    }
+
+    fn grid_indices_to_fractal_space(&self, x: i32, y: i32, max_x: i32, max_y: i32) -> (f64, f64) {
+        let fractal_space_width = self.x_end - self.x_start;
+        let fractal_space_height = self.y_end - self.y_start;
+        (
+            (x as f64) / (max_x as f64) * fractal_space_width + self.x_start,
+            (y as f64) / (max_y as f64) * fractal_space_height + self.y_start,
+        )
+    }
+}
+
+fn main() {
+    // Change this to OpenGL::V2_1 if not working.
+    let opengl = OpenGL::V3_2;
+
+    let starting_window_width: usize = 900;
+    let starting_window_height: usize = 600;
+    let starting_pixel_size = 1.0;
+
+    // Create an Glutin window.
+    let mut window: Window = WindowSettings::new(
+        "rust-fractals",
+        [starting_window_width as u32, starting_window_height as u32],
+    )
+    .graphics_api(opengl)
+    .exit_on_esc(true)
+    .build()
+    .unwrap();
+
+    // Create a new game and run it.
+    let mut app = App {
+        gl: GlGraphics::new(opengl),
+        pixel_size: starting_pixel_size,
         x_start: -2.0,
         x_end: 1.0,
         y_start: -1.0,
         y_end: 1.0,
-        iterations: 101,
-    }
-}
+        iterations: 104,
+        pixel_data: vec![
+            vec![true; starting_window_height / starting_pixel_size as usize];
+            starting_window_width / starting_pixel_size as usize
+        ],
+        window_width: starting_window_width as i32,
+        window_height: starting_window_height as i32,
+    };
 
-fn event(_app: &App, model: &mut Model, event: Event) {
-    if let Event::WindowEvent { id: _, simple } = event {
-        if let Some(window_event) = simple {
-            match window_event {
-                WindowEvent::MouseMoved(_point) => {
-                    // model.x = point[0];
-                    // model.y = point[1];
-                    println!("{:?}", window_event)
-                }
-                // WindowEvent::MouseWheel(mouse_scroll_delta, touch_phase) => {
-                //     if let MouseScrollDelta::LineDelta(hor, ver) = mouse_scroll_delta {}
-                // }
-                WindowEvent::KeyPressed(key) => match key {
-                    Key::Up | Key::W => {
-                        let change = (model.y_end - model.y_start) * 0.1;
-                        model.y_start += change;
-                        model.y_end += change;
-                    }
-                    Key::Down | Key::S => {
-                        let change = (model.y_end - model.y_start) * 0.1;
-                        model.y_start -= change;
-                        model.y_end -= change;
-                    }
-                    Key::Right | Key::D => {
-                        let change = (model.x_end - model.x_start) * 0.1;
-                        model.x_start += change;
-                        model.x_end += change;
-                    }
-                    Key::Left | Key::A => {
-                        let change = (model.x_end - model.x_start) * 0.1;
-                        model.x_start -= change;
-                        model.x_end -= change;
-                    }
-                    Key::I => {
-                        let width = model.x_end - model.x_start;
-                        let height = model.y_end - model.y_start;
-                        model.x_start += width / 4.0;
-                        model.x_end -= width / 4.0;
-                        model.y_start += height / 4.0;
-                        model.y_end -= height / 4.0;
-                    }
-                    Key::O => {
-                        let width = model.x_end - model.x_start;
-                        let height = model.y_end - model.y_start;
-                        model.x_start -= width / 2.0;
-                        model.x_end += width / 2.0;
-                        model.y_start -= height / 2.0;
-                        model.y_end += height / 2.0;
-                    }
-                    Key::K => {
-                        model.pixel_size = std::cmp::max(1, model.pixel_size - 1);
-                    }
-                    Key::L => {
-                        model.pixel_size = std::cmp::min(WINDOW_HEIGHT / 2, model.pixel_size + 1);
-                    }
-                    Key::Comma => {
-                        model.iterations += 50;
-                    }
-                    Key::Period => {
-                        model.iterations = std::cmp::max(10, model.iterations - 50);
-                    }
-                    _ => (),
-                },
-                _ => (),
-            }
+    app.update_pixel_data();
+
+    let mut events = Events::new(EventSettings::new());
+    while let Some(e) = events.next(&mut window) {
+        if let Some(args) = e.render_args() {
+            app.render(&args);
+        }
+
+        if let Some(args) = e.button_args() {
+            app.handle_button(&args);
         }
     }
 }
 
-fn view(app: &App, model: &Model, frame: Frame) {
-    println!("{}", app.fps());
-    let draw = app.draw();
-    draw.background().color(PLUM);
-    draw_mandlebrot(&model, &draw, &frame);
-    draw.to_frame(app, &frame).unwrap();
-}
-
-fn draw_mandlebrot(model: &Model, draw: &Draw, frame: &Frame) {
-    let width_pixels = frame.texture_size()[0] as i32 / model.pixel_size;
-    let height_pixels = frame.texture_size()[1] as i32 / model.pixel_size;
-    let width_pixel_distance = (model.x_end - model.x_start) / (width_pixels as f64);
-    let height_pixel_distance = (model.y_end - model.y_start) / (height_pixels as f64);
-    for y in 0..height_pixels {
-        for x in 0..width_pixels {
-            let x_mandlebrot_space = (x as f64) * width_pixel_distance + model.x_start;
-            let y_mandlebrot_space = (y as f64) * height_pixel_distance + model.y_start;
-            let i = iterations_from_mandlebrot(
-                x_mandlebrot_space,
-                y_mandlebrot_space,
-                model.iterations,
-            );
-            if i == model.iterations {
-                draw.rect()
-                    .color(BLACK)
-                    .x((x * model.pixel_size) as f32 - (frame.texture_size()[0] / 2) as f32)
-                    .y((y * model.pixel_size) as f32 - (frame.texture_size()[1] / 2) as f32)
-                    .w(model.pixel_size as f32)
-                    .h(model.pixel_size as f32);
-            }
-        }
-    }
-}
-
-fn iterations_from_mandlebrot(r0: f64, c0: f64, iterations: i32) -> i32 {
+fn in_mandlebrot(r0: f64, c0: f64, iterations: i32) -> bool {
     let mut r = 0.0;
     let mut c = 0.0;
     let mut r2 = 0.0;
     let mut c2 = 0.0;
-    for i in 0..iterations {
+    for _i in 0..iterations {
         if r2 + c2 > 4.0 {
-            return i;
+            return false;
         }
         c = 2.0 * r * c + c0;
         r = r2 - c2 + r0;
         r2 = r * r;
         c2 = c * c;
     }
-    iterations
+    true
 }
