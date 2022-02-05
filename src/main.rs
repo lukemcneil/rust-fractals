@@ -3,6 +3,7 @@ extern crate graphics;
 extern crate opengl_graphics;
 extern crate piston;
 
+use rayon::prelude::*;
 use std::time::Instant;
 
 use glutin_window::GlutinWindow as Window;
@@ -10,6 +11,13 @@ use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::{Button, ButtonArgs, ButtonEvent, ButtonState, Key, RenderArgs, RenderEvent};
 use piston::window::WindowSettings;
+
+#[derive(Debug)]
+enum Fractal {
+    Mandlebrot,
+    Julia,
+    BurningShip,
+}
 
 pub struct App {
     gl: GlGraphics,
@@ -22,6 +30,8 @@ pub struct App {
     pixel_data: Vec<Vec<Option<[f32; 4]>>>,
     window_width: i32,
     window_height: i32,
+    coloring_constant: f32,
+    fractal: Fractal,
 }
 
 impl App {
@@ -52,6 +62,7 @@ impl App {
     fn handle_button(&mut self, args: &ButtonArgs) {
         if let ButtonState::Press = args.state {
             if let Button::Keyboard(key) = args.button {
+                let mut need_to_update = true;
                 match key {
                     Key::W | Key::Up => self.pan(0.0, 1.0),
                     Key::A | Key::Left => self.pan(-1.0, 0.0),
@@ -59,10 +70,10 @@ impl App {
                     Key::D | Key::Right => self.pan(1.0, 0.0),
                     Key::I => self.zoom(true),
                     Key::O => self.zoom(false),
-                    Key::Equals => self.iterations += 10,
+                    Key::Equals => self.iterations += 100,
                     Key::Minus => {
-                        if self.iterations > 10 {
-                            self.iterations -= 10
+                        if self.iterations > 100 {
+                            self.iterations -= 100
                         }
                     }
                     Key::RightBracket => {
@@ -75,9 +86,16 @@ impl App {
                         self.pixel_size += 1.0;
                         self.reset_pixel_data_vecs();
                     }
-                    _ => (),
+                    Key::Period => self.coloring_constant *= 1.1,
+                    Key::Comma => self.coloring_constant /= 1.1,
+                    Key::D1 => self.fractal = Fractal::Mandlebrot,
+                    Key::D2 => self.fractal = Fractal::Julia,
+                    Key::D3 => self.fractal = Fractal::BurningShip,
+                    _ => need_to_update = false,
                 }
-                self.update_pixel_data();
+                if need_to_update {
+                    self.update_pixel_data();
+                }
             }
         }
     }
@@ -102,19 +120,19 @@ impl App {
     }
 
     fn zoom(&mut self, zoom_in: bool) {
-        let scroll_speed = 10.0;
+        let zoom_speed = 5.0;
         let width = self.x_end - self.x_start;
         let height = self.y_end - self.y_start;
         if zoom_in {
-            self.x_start += width / scroll_speed;
-            self.x_end -= width / scroll_speed;
-            self.y_start += height / scroll_speed;
-            self.y_end -= height / scroll_speed;
+            self.x_start += width / zoom_speed;
+            self.x_end -= width / zoom_speed;
+            self.y_start += height / zoom_speed;
+            self.y_end -= height / zoom_speed;
         } else {
-            self.x_start -= width / (scroll_speed / 2.0);
-            self.x_end += width / (scroll_speed / 2.0);
-            self.y_start -= height / (scroll_speed / 2.0);
-            self.y_end += height / (scroll_speed / 2.0);
+            self.x_start -= width / (zoom_speed / 2.0);
+            self.x_end += width / (zoom_speed / 2.0);
+            self.y_start -= height / (zoom_speed / 2.0);
+            self.y_end += height / (zoom_speed / 2.0);
         }
     }
 
@@ -122,43 +140,55 @@ impl App {
         let now = Instant::now();
         let width_pixels = self.window_width / self.pixel_size as i32;
         let height_pixels = self.window_height / self.pixel_size as i32;
-        for x in 0..width_pixels {
-            for y in 0..height_pixels {
-                let (x_f, y_f) = self.grid_indices_to_fractal_space(
-                    x,
-                    height_pixels - y,
-                    width_pixels,
-                    height_pixels,
-                );
-                let i = iterations_from_mandlebrot(x_f, y_f, self.iterations);
-                self.pixel_data[x as usize][y as usize] = if i == self.iterations {
-                    None
-                } else {
-                    Some(iterations_to_color(i))
-                };
-            }
-        }
+
+        let fractal_space_width = self.x_end - self.x_start;
+        let fractal_space_height = self.y_end - self.y_start;
+
+        self.pixel_data
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(x, col)| {
+                col.par_iter_mut().enumerate().for_each(|(y, color)| {
+                    let x_f =
+                        (x as f64) / (width_pixels as f64) * fractal_space_width + self.x_start;
+                    let y_f = ((height_pixels as usize - y) as f64) / (height_pixels as f64)
+                        * fractal_space_height
+                        + self.y_start;
+                    let i = match self.fractal {
+                        Fractal::Mandlebrot => {
+                            iterations_from_mandlebrot(x_f, y_f, self.iterations)
+                        }
+                        Fractal::Julia => iterations_from_julia(x_f, y_f, self.iterations),
+                        Fractal::BurningShip => {
+                            iterations_from_burning_ship(x_f, y_f, self.iterations)
+                        }
+                    };
+                    if i != self.iterations {
+                        *color = Some(iterations_to_color(i, self.coloring_constant));
+                    } else {
+                        *color = None;
+                    }
+                })
+            });
         self.print_current_settings(now.elapsed().as_millis() as f64 / 1000.0);
     }
 
     fn print_current_settings(&mut self, elapsed: f64) {
-        println!("------------------------------------------------------------");
-        println!("x = {}", self.x_start);
-        println!("y = {}", self.y_start);
-        println!("width = {}", self.x_end - self.x_start);
-        println!("height = {}", self.y_end - self.y_start);
-        println!("pixel size = {}", self.pixel_size);
-        println!("iterations = {}", self.iterations);
+        print!("{}[2J", 27 as char);
+        println!("change with w,a,s,d and i,o");
+        println!("\tx = {}", self.x_start);
+        println!("\ty = {}", self.y_start);
+        println!("\twidth = {}", self.x_end - self.x_start);
+        println!("\theight = {}", self.y_end - self.y_start);
+        println!("change with [,]");
+        println!("\tpixel size = {}", self.pixel_size);
+        println!("change with =,-");
+        println!("\titerations = {}", self.iterations);
+        println!("change with period,comma");
+        println!("\tcoloring constant = {}", self.coloring_constant);
+        println!("change with numbers");
+        println!("\tfractal = {:?}", self.fractal);
         println!("time to update = {}", elapsed);
-    }
-
-    fn grid_indices_to_fractal_space(&self, x: i32, y: i32, max_x: i32, max_y: i32) -> (f64, f64) {
-        let fractal_space_width = self.x_end - self.x_start;
-        let fractal_space_height = self.y_end - self.y_start;
-        (
-            (x as f64) / (max_x as f64) * fractal_space_width + self.x_start,
-            (y as f64) / (max_y as f64) * fractal_space_height + self.y_start,
-        )
     }
 }
 
@@ -168,7 +198,7 @@ fn main() {
 
     let starting_window_width: usize = 1200;
     let starting_window_height: usize = 800;
-    let starting_pixel_size = 2.0;
+    let starting_pixel_size = 1.0;
 
     // Create an Glutin window.
     let mut window: Window = WindowSettings::new(
@@ -188,13 +218,15 @@ fn main() {
         x_end: 1.0,
         y_start: -1.0,
         y_end: 1.0,
-        iterations: 104,
+        iterations: 204,
         pixel_data: vec![
             vec![None; starting_window_height / starting_pixel_size as usize];
             starting_window_width / starting_pixel_size as usize
         ],
         window_width: starting_window_width as i32,
         window_height: starting_window_height as i32,
+        coloring_constant: 0.05,
+        fractal: Fractal::Mandlebrot,
     };
 
     app.update_pixel_data();
@@ -211,13 +243,12 @@ fn main() {
     }
 }
 
-fn iterations_to_color(iterations: i32) -> [f32; 4] {
-    const A: f32 = 0.1;
+fn iterations_to_color(iterations: i32, a: f32) -> [f32; 4] {
     let n = iterations as f32;
     [
-        (0.5 * (A * n).sin() + 0.5),
-        (0.5 * (A * n + 2.094).sin() + 0.5),
-        (0.5 * (A * n + 4.188).sin() + 0.5),
+        (0.5 * (a * n).sin() + 0.5),
+        (0.5 * (a * n + 2.094).sin() + 0.5),
+        (0.5 * (a * n + 4.188).sin() + 0.5),
         1.0,
     ]
 }
@@ -235,6 +266,35 @@ fn iterations_from_mandlebrot(r0: f64, c0: f64, iterations: i32) -> i32 {
         r = r2 - c2 + r0;
         r2 = r * r;
         c2 = c * c;
+    }
+    iterations
+}
+
+fn iterations_from_julia(mut zx: f64, mut zy: f64, iterations: i32) -> i32 {
+    let cx = -0.8;
+    let cy = 0.156;
+    for i in 0..iterations {
+        if zx * zx + zy * zy > 4.0 {
+            return i;
+        }
+        let x_temp = zx * zx - zy * zy;
+        zy = 2.0 * zx * zy + cy;
+        zx = x_temp + cx
+    }
+    iterations
+}
+
+fn iterations_from_burning_ship(x0: f64, y0: f64, iterations: i32) -> i32 {
+    let y0 = -1.0 * y0;
+    let mut zx = x0;
+    let mut zy = y0;
+    for i in 0..iterations {
+        if zx * zx + zy * zy > 4.0 {
+            return i;
+        }
+        let x_temp = zx * zx - zy * zy + x0;
+        zy = (2.0 * zx * zy).abs() + y0;
+        zx = x_temp;
     }
     iterations
 }
