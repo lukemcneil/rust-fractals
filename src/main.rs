@@ -166,9 +166,9 @@ fn main() {
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
 
-    let starting_window_width: usize = 900;
-    let starting_window_height: usize = 600;
-    let starting_pixel_size = 1.0;
+    let starting_window_width: usize = 1200;
+    let starting_window_height: usize = 800;
+    let starting_pixel_size = 2.0;
 
     // Create an Glutin window.
     let mut window: Window = WindowSettings::new(
