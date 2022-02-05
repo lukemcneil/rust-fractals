@@ -7,7 +7,7 @@ Controls
 * `d` - move right
 * `i` - zoom in
 * `o` - zoom out
-* `.` - make the window bigger
-* `,` - make the window smaller
+* `]` - draw more pixels
+* `[` - draw fewer pixels
 * `=` - run with more iterations, draw with more precision
 * `-` - run with less iterations, draw with less precision
